@@ -134,6 +134,13 @@ create table if not exists epay.pagos (
 );
 create index if not exists pagos_api_maquina_fecha on epay.pagos (cuenta, maquina_id, fecha);
 create index if not exists pagos_api_fecha on epay.pagos (fecha);
+-- Nombre del medio para los códigos que se descubrieron después de la primera carga (idempotente).
+-- Mantener igual a MEDIOS en src/tareas/ventas.js.
+update epay.pagos
+set medio = case medio_codigo
+              when '1' then 'TC / TD' when '2' then 'PDV' when '3' then 'Pago Móvil' when '5' then 'ePay QR'
+              when '6' then 'Yappy QR' when '7' then 'Débito Inmediato' when '11' then 'Gift Card' end
+where medio like 'código %' and medio_codigo in ('1', '2', '3', '5', '6', '7', '11');
 
 -- Existencias por canal (slot) de cada máquina desde la API e=canal (sin login). Foto de la última lectura.
 create table if not exists epay.canales (

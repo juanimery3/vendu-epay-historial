@@ -14,9 +14,9 @@ const COLUMNAS_CANALES = [
   "cuenta", "canal_id", "maquina_id", "codigo", "seleccion", "producto_id", "activo", "cantidad", "minimo", "maximo",
 ];
 
-// Códigos de medio de e=pago, verificados contra el reporte de pagos externos (15-09-2026):
-// I03 (PDV, Débito Inmediato, Gift Card) y V16-UNIPBB, Epay K (TC / TD, respuesta KPAY3).
-const MEDIOS = { 1: "TC / TD", 2: "PDV", 7: "Débito Inmediato", 11: "Gift Card" };
+// Códigos de medio de e=pago, verificados contra el reporte de pagos externos (15-09-2026: Epay.Uno 01–15/09,
+// 8.599 por API contra 8.598 en el portal, mismos totales por medio). Mantener igual al CASE de sql/001_esquema.sql.
+const MEDIOS = { 1: "TC / TD", 2: "PDV", 3: "Pago Móvil", 5: "ePay QR", 6: "Yappy QR", 7: "Débito Inmediato", 11: "Gift Card" };
 
 const FECHA_API = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 const utc = (fecha) => String(fecha).replace(" ", "T") + "Z"; // la API entrega UTC
