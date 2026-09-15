@@ -77,4 +77,4 @@ Tareas: `esquema`, `estatus`, `ventas`, `fichas`, `historico AAAA-MM [AAAA-MM]`.
 `LIMITE_MAQUINAS=N` limita ventas y fichas a N máquinas (pruebas). `PGLITE=1` usa un Postgres en memoria
 (requiere `npm i @electric-sql/pglite`).
 Notas de datos: la API de ventas entrega la hora en UTC (se guarda como tal); el reporte de pagos está en hora
-de Caracas. La API de ventas no incluye las máquinas Epay K (ej. NEPT1).
+de Caracas. La API de ventas también devuelve las máquinas Epay K (ej. NEPT1).

@@ -55,7 +55,9 @@ export async function cargarVentas(db, epay, meses) {
           v.tid ?? null,
           v.descr ?? null,
         ]);
-      nuevas += await insertarLote(db, "epay.ventas", COLUMNAS_VENTAS, filas, "(cuenta, venta_id) do nothing");
+      // Esperar y después sumar: `nuevas += await …` lee `nuevas` antes del await y pierde lo sumado por los otros trabajadores.
+      const insertadas = await insertarLote(db, "epay.ventas", COLUMNAS_VENTAS, filas, "(cuenta, venta_id) do nothing");
+      nuevas += insertadas;
     }
   });
   return { maquinas: maquinas.length, ventas_recibidas: recibidas, ventas_nuevas: nuevas, fallos };

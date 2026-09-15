@@ -40,10 +40,12 @@ export async function tareaFichas(db, epay) {
         epay.cuenta, Number(p.rowid), p.codigo ?? null, p.nombre?.trim() ?? null, p.categoria || null,
         numero(p.precio), numero(p.usd), numero(p.costo), numero(p.costo_usd), numero(p.iva),
       ]);
-      productos += await insertarLote(db, "epay.productos", COLUMNAS_PRODUCTOS, filas,
+      // Esperar y después sumar (con `+= await` se pierden las sumas de los trabajadores en paralelo).
+      const actualizados = await insertarLote(db, "epay.productos", COLUMNAS_PRODUCTOS, filas,
         `(cuenta, producto_id) do update set codigo = excluded.codigo, nombre = excluded.nombre,
          categoria = excluded.categoria, precio_bs = excluded.precio_bs, precio_usd = excluded.precio_usd,
          costo_bs = excluded.costo_bs, costo_usd = excluded.costo_usd, iva = excluded.iva, actualizado = now()`);
+      productos += actualizados;
     } catch {
       fallos++;
     }
