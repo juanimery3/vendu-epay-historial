@@ -1,4 +1,5 @@
-// Descripción de cada ficha (maquinas.php?id=) y productos con precios y costos (API e=prods).
+// Lo que todavía exige login (única tarea que entra al portal, cada 6 h): descripción de cada ficha
+// (maquinas.php?id=) y pago hasta / ruta / inventario (reporte7.php). Los productos salen por API (e=prods).
 
 import { insertarLote, registrarEvento } from "../db.js";
 import { enParalelo, numero } from "../util.js";
@@ -8,12 +9,26 @@ const COLUMNAS_PRODUCTOS = [
 ];
 
 export async function tareaFichas(db, epay) {
+  let fichas = 0, eventos = 0, productos = 0, fallos = 0, datosReporte7 = 0;
+
+  // Pago hasta, ruta e inventario: una sola página del portal para toda la flota.
+  try {
+    for (const m of await epay.maquinas()) {
+      await db.query(
+        "update epay.maquinas set pago_hasta = $3, ruta = $4, inventario = $5 where cuenta = $1 and maquina_id = $2",
+        [epay.cuenta, m.maquina_id, m.pago_hasta, m.ruta, m.inventario]
+      );
+      datosReporte7++;
+    }
+  } catch {
+    fallos++;
+  }
+
   const maquinas = (await db.query(
     "select maquina_id, uid, descripcion, codigo_interno from epay.maquinas where cuenta = $1 and vigente order by maquina_id",
     [epay.cuenta]
   )).rows.slice(0, Number(process.env.LIMITE_MAQUINAS) || undefined);
 
-  let fichas = 0, eventos = 0, productos = 0, fallos = 0;
   await enParalelo(maquinas, 3, async (maq) => {
     try {
       const campos = await epay.ficha(maq.maquina_id);
@@ -50,5 +65,5 @@ export async function tareaFichas(db, epay) {
       fallos++;
     }
   });
-  return { fichas, eventos, productos, fallos };
+  return { fichas, datos_reporte7: datosReporte7, eventos, productos, fallos };
 }

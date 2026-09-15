@@ -13,6 +13,7 @@ export class Epay {
     this.clave = clave;
     this.token = token;
     this.cookies = new Map();
+    this.logins = 0; // se informa en cada corrida: la meta es depender lo menos posible del portal
   }
 
   async #pedir(ruta, { form, redirect = "follow" } = {}) {
@@ -37,6 +38,7 @@ export class Epay {
 
   async login() {
     if (!this.usuario || !this.clave) throw new Error("faltan credenciales");
+    this.logins++;
     await this.#pedir("/login.php", { redirect: "manual" }); // siembra PHPSESSID
     // "enviar" es el botón del formulario: login.php exige isset($_POST['enviar']).
     const res = await this.#pedir("/login.php", {
@@ -159,14 +161,18 @@ export class Epay {
     return this.#api({ e: "venta", id: uid, m: String(mes), a: String(anio) });
   }
 
+  /** Pagos de un módulo en un mes (API v1): los mismos del reporte de pagos externos. Fechas en UTC. */
+  pagosMes(uid, mes, anio) {
+    return this.#api({ e: "pago", id: uid, m: String(mes), a: String(anio) });
+  }
+
   /** Productos cargados en un módulo, con precios y costos (API v1). */
   productos(uid) {
     return this.#api({ e: "prods", id: uid });
   }
 
-  /** Pagos externos (reporte22.php) de todas las máquinas entre dos días (YYYY-MM-DD, inclusive). */
-  async pagosExternos(desde, hasta) {
-    const html = await this.pagina("/reporte22.php", { fecha: desde, fechah: hasta, maquina: "0" });
-    return parseTabla(html).filter((f) => /^\d{2}\/\d{2}\/\d{4}/.test(f["Fecha"] || ""));
+  /** Canales (slots) de un módulo con producto, existencia, mínimo y máximo (API v1). */
+  canales(uid) {
+    return this.#api({ e: "canal", id: uid });
   }
 }

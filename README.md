@@ -5,10 +5,14 @@ Guarda en una base propia (Supabase) todo lo que pasa en las máquinas de las cu
 
 | Qué | Cada cuánto | Fuente |
 |---|---|---|
-| Semáforo verde/rojo, código interno, nombre, UID del módulo | 10 min | "Estatus equipos" y Máquinas definidas |
-| Ventas una por una (con el código interno que tenía la máquina en esa venta) | 1 hora | API de ventas |
-| Pagos externos (PDV, débito inmediato, gift card) | 1 hora | Pagos externos |
-| Descripción de cada ficha y productos con precios y costos | 6 horas | Ficha de máquina y API de productos |
+| Semáforo verde/rojo, código interno, nombre, UID y MAC del módulo, último acceso | 10 min | API `e=estatus` con token (sin token: portal) |
+| Ventas una por una (con el código interno que tenía la máquina en esa venta) | 1 hora | API `e=venta` |
+| Pagos (PDV, débito inmediato, gift card), los mismos del reporte de pagos externos | 1 hora | API `e=pago` |
+| Existencias por canal (slot) | 1 hora | API `e=canal` |
+| Productos con precios y costos | 6 horas | API `e=prods` |
+| Descripción de cada ficha, pago hasta y ruta | 6 horas | Portal (**el único login**: 4 al día) |
+
+Cada corrida guarda en `epay.corridas` cuántos logins hizo (`resumen.logins`).
 
 Todo cambio queda en `epay.eventos`: **caida**, **recuperacion**, **cambio_modulo** (otro UID),
 **cambio_codigo_interno** (el módulo quedó en otra máquina), **cambio_nombre**, **cambio_version**,
@@ -52,6 +56,9 @@ Supabase → *Table Editor* → esquema **epay**, o *SQL Editor* con estas vista
 | `epay.v_codigo_en_ventas` | con qué código interno vendió cada módulo y entre qué fechas |
 | `epay.v_sin_ventas` | horas desde la última venta (verde pero sin vender = revisar) |
 | `epay.v_ventas_dia` | ventas por día (hora de Caracas) y máquina |
+| `epay.v_pagos_dia` | pagos por día, máquina y medio |
+| `epay.v_ventas_vs_pagos` | ventas contra pagos por día y máquina (diferencia en Bs) |
+| `epay.v_inventario` | existencias por canal con estado ok / bajo / vacío / negativo |
 | `epay.v_sincronizacion` | última corrida de cada tarea (si algo se detuvo) |
 
 Ejemplos:

@@ -115,6 +115,43 @@ create table if not exists epay.productos (
   primary key (cuenta, producto_id)
 );
 
+-- Pagos por módulo desde la API e=pago (sin login). Coinciden con el reporte de pagos externos.
+-- medio_codigo: 2 = PDV, 7 = Débito Inmediato, 11 = Gift Card.
+create table if not exists epay.pagos (
+  cuenta       text    not null,
+  pago_id      bigint  not null,                         -- rowid de la API
+  maquina_id   integer not null,
+  uid          text,
+  fecha        timestamptz not null,                     -- la API la da en UTC
+  monto_bs     numeric(14, 2),
+  medio_codigo text,
+  medio        text,
+  ref          text,                                     -- referencia / aprobación
+  ref2         text,                                     -- lote / referencia bancaria
+  cliente_id   integer,
+  cargado      timestamptz not null default now(),
+  primary key (cuenta, pago_id)
+);
+create index if not exists pagos_api_maquina_fecha on epay.pagos (cuenta, maquina_id, fecha);
+create index if not exists pagos_api_fecha on epay.pagos (fecha);
+
+-- Existencias por canal (slot) de cada máquina desde la API e=canal (sin login). Foto de la última lectura.
+create table if not exists epay.canales (
+  cuenta      text    not null,
+  canal_id    integer not null,                          -- rowid de la API
+  maquina_id  integer not null,
+  codigo      text,                                      -- slot
+  seleccion   text,                                      -- número que marca el cliente
+  producto_id integer,
+  activo      boolean,
+  cantidad    numeric(10, 2),
+  minimo      numeric(10, 2),
+  maximo      numeric(10, 2),
+  actualizado timestamptz not null default now(),
+  primary key (cuenta, canal_id)
+);
+create index if not exists canales_maquina on epay.canales (cuenta, maquina_id);
+
 -- Bitácora de cada ejecución: permite ver si la sincronización se detuvo (huecos).
 create table if not exists epay.corridas (
   id      bigint generated always as identity primary key,
@@ -199,6 +236,47 @@ select v.cuenta, (v.fecha at time zone 'America/Caracas')::date as dia, v.maquin
 from epay.ventas v
 left join epay.maquinas m using (cuenta, maquina_id)
 group by 1, 2, 3, 4, 5;
+
+-- Pagos por día (hora de Caracas), máquina y medio.
+create or replace view epay.v_pagos_dia as
+select p.cuenta, (p.fecha at time zone 'America/Caracas')::date as dia, p.maquina_id, m.codigo_interno, p.medio,
+       count(*) as pagos, sum(p.monto_bs) as monto_bs
+from epay.pagos p
+left join epay.maquinas m using (cuenta, maquina_id)
+group by 1, 2, 3, 4, 5;
+
+-- Ventas contra pagos por día y máquina: diferencia_bs distinta de 0 = pagos sin despacho o despachos sin pago.
+create or replace view epay.v_ventas_vs_pagos as
+with v as (
+  select cuenta, (fecha at time zone 'America/Caracas')::date as dia, maquina_id,
+         count(*) as ventas, sum(monto_bs) as ventas_bs
+  from epay.ventas group by 1, 2, 3
+), p as (
+  select cuenta, (fecha at time zone 'America/Caracas')::date as dia, maquina_id,
+         count(*) as pagos, sum(monto_bs) as pagos_bs
+  from epay.pagos group by 1, 2, 3
+)
+select cuenta, dia, maquina_id, m.codigo_interno,
+       coalesce(v.ventas, 0) as ventas, coalesce(p.pagos, 0) as pagos,
+       coalesce(v.ventas_bs, 0) as ventas_bs, coalesce(p.pagos_bs, 0) as pagos_bs,
+       coalesce(p.pagos_bs, 0) - coalesce(v.ventas_bs, 0) as diferencia_bs
+from v
+full join p using (cuenta, dia, maquina_id)
+left join epay.maquinas m using (cuenta, maquina_id);
+
+-- Inventario por canal con el mismo criterio del portal (cantidad < mínimo = bajo).
+create or replace view epay.v_inventario as
+select c.cuenta, c.maquina_id, m.codigo_interno, c.codigo as slot, c.seleccion, c.producto_id, pr.nombre as producto,
+       c.cantidad, c.minimo, c.maximo, c.activo,
+       case when not c.activo then 'inactivo'
+            when c.cantidad < 0 then 'negativo'
+            when c.cantidad = 0 then 'vacio'
+            when c.cantidad < c.minimo then 'bajo'
+            else 'ok' end as estado,
+       c.actualizado at time zone 'America/Caracas' as actualizado_caracas
+from epay.canales c
+left join epay.maquinas m using (cuenta, maquina_id)
+left join epay.productos pr on pr.cuenta = c.cuenta and pr.producto_id = c.producto_id;
 
 -- Horas desde la última venta de cada máquina vigente (verde sin vender = revisar).
 create or replace view epay.v_sin_ventas as

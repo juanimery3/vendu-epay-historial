@@ -1,9 +1,9 @@
 // Uso:
 //   node src/index.js esquema                       instala o actualiza las tablas y vistas
-//   node src/index.js estatus                       semáforo + datos de máquinas (cada 10 min)
-//   node src/index.js ventas                        ventas del mes y pagos de ayer y hoy (cada hora)
-//   node src/index.js fichas                        descripciones y productos (cada 6 h)
-//   node src/index.js historico AAAA-MM [AAAA-MM]   carga inicial desde un mes
+//   node src/index.js estatus                       semáforo + datos de máquinas (cada 10 min; API con token)
+//   node src/index.js ventas                        ventas y pagos del mes + existencias por canal (cada hora; API)
+//   node src/index.js fichas                        descripciones, pago hasta/ruta (portal, único login) y productos (cada 6 h)
+//   node src/index.js historico AAAA-MM [AAAA-MM]   carga inicial de ventas y pagos desde un mes (API)
 // Credenciales por variables de entorno: DATABASE_URL, EPAYUNO_USER/PASS, NEPTUNO_USER/PASS y,
 // opcionales, EPAYUNO_API_TOKEN / NEPTUNO_API_TOKEN (estatus por API con MAC del módulo).
 
@@ -60,20 +60,22 @@ async function main() {
 
     let configuradas = 0, fallidas = 0;
     for (const c of CUENTAS) {
-      if (!c.usuario || !c.clave) {
-        console.log(`::warning::${c.cuenta}: faltan los secretos de usuario y clave de epay.uno, se omite`);
+      if (!(c.usuario && c.clave) && !c.token) {
+        console.log(`::warning::${c.cuenta}: faltan los secretos de epay.uno (usuario y clave o token), se omite`);
         continue;
       }
       configuradas++;
       const inicio = new Date();
+      const epay = new Epay(c);
       let ok = true, resumen;
       try {
-        resumen = await TAREAS[tarea](db, new Epay(c));
+        resumen = await TAREAS[tarea](db, epay);
       } catch (e) {
         ok = false;
         fallidas++;
         resumen = { error: String(e?.message ?? e).slice(0, 200) };
       }
+      resumen.logins = epay.logins;
       const segundos = ((Date.now() - inicio.getTime()) / 1000).toFixed(1);
       console.log(`${c.cuenta} · ${tarea} · ${ok ? "ok" : "ERROR"} · ${segundos} s · ${JSON.stringify(resumen)}`);
       await db.query(

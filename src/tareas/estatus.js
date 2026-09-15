@@ -22,27 +22,13 @@ async function leerDesdeApi(epay) {
     m.maquina_id,
     m.ultimo_acceso && Date.parse(m.ultimo_acceso) >= limite ? "verde" : "rojo",
   ]));
-  if (epay.usuario && epay.clave) {
-    // Pago hasta, ruta e inventario solo salen en reporte7.php; si falla, se conservan los guardados.
-    try {
-      const extra = new Map((await epay.maquinas()).map((m) => [m.maquina_id, m]));
-      for (const m of lista) Object.assign(m, pick(extra.get(m.maquina_id), ["pago_hasta", "ruta", "inventario"]));
-    } catch {
-      /* se sigue con los datos de la API */
-    }
-  }
+  // Sin login: pago hasta, ruta e inventario del portal los actualiza la tarea fichas (cada 6 h).
   return { maquinas: lista, colores, fuente: "api" };
 }
 
 async function leerDesdePortal(epay) {
   const [semaforo, lista] = await Promise.all([epay.estatus(), epay.maquinas()]);
   return { maquinas: lista, colores: new Map(semaforo.map((s) => [s.maquina_id, s.color])), fuente: "portal" };
-}
-
-function pick(obj, campos) {
-  const out = {};
-  for (const c of campos) if (obj && obj[c] !== undefined) out[c] = obj[c];
-  return out;
 }
 
 export async function tareaEstatus(db, epay) {
