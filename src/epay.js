@@ -7,10 +7,11 @@ const BASE = "https://www.epay.uno";
 const UA = "Mozilla/5.0 (Vendu-Historial/1.0)";
 
 export class Epay {
-  constructor({ cuenta, usuario, clave }) {
+  constructor({ cuenta, usuario, clave, token }) {
     this.cuenta = cuenta;
     this.usuario = usuario;
     this.clave = clave;
+    this.token = token;
     this.cookies = new Map();
   }
 
@@ -82,6 +83,31 @@ export class Epay {
     } catch {
       throw new Error(`la API e=${parametros.e} no devolvió JSON`);
     }
+  }
+
+  /**
+   * Flota con el token de la API (e=estatus): código interno, UID, MAC del módulo, activo, versión y
+   * último acceso (UTC). Sin token válido epay responde 403.
+   */
+  async estatusApi() {
+    const lista = await this.#api({ e: "estatus", token: this.token });
+    if (!Array.isArray(lista)) throw new Error("e=estatus no devolvió una lista");
+    return lista
+      .map((m) => ({
+        maquina_id: Number(m.rowid),
+        codigo_interno: String(m.codigo ?? "").trim() || null,
+        // El portal muestra el nombre sin espacios sobrantes; sin trim alternar API/portal simula cambios de nombre.
+        nombre: String(m.nombre ?? "").trim() || null,
+        uid: m.serial || null,
+        modulo_mac: String(m.modulo ?? "").trim().toUpperCase() || null,
+        activo_epay: m.activo === "1",
+        version: m.version || null,
+        // Los módulos que nunca reportaron traen fechas de relleno de hace años: se guardan como vacías.
+        ultimo_acceso: /^20[2-9]\d-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(m.acceso ?? "")
+          ? m.acceso.replace(" ", "T") + "Z"
+          : null,
+      }))
+      .filter((m) => m.maquina_id > 0);
   }
 
   /** Semáforo "Estatus equipos" de reportes.php: verde = reportó hace menos de 1 h. */

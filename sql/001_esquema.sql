@@ -31,6 +31,10 @@ create table if not exists epay.maquinas (
   ultima_vez     timestamptz not null default now(),
   primary key (cuenta, maquina_id)
 );
+-- Datos que solo trae la API con token (e=estatus).
+alter table epay.maquinas add column if not exists modulo_mac    text;         -- MAC del módulo físico
+alter table epay.maquinas add column if not exists activo_epay   boolean;      -- false = epay no la muestra en el dashboard
+alter table epay.maquinas add column if not exists ultimo_acceso timestamptz;  -- último reporte del módulo
 
 -- Color actual del semáforo ("Estatus equipos"): verde = reportó hace menos de 1 h.
 create table if not exists epay.estatus_actual (
@@ -48,7 +52,7 @@ create table if not exists epay.eventos (
   fecha      timestamptz not null default now(),
   cuenta     text    not null,
   maquina_id integer not null,
-  tipo       text    not null,   -- alta, baja, reactivada, caida, recuperacion, cambio_modulo,
+  tipo       text    not null,   -- alta, baja, reactivada, caida, recuperacion, cambio_modulo, cambio_mac,
                                  -- cambio_codigo_interno, cambio_nombre, cambio_version, cambio_descripcion
   antes      jsonb,
   despues    jsonb   not null
@@ -125,12 +129,15 @@ create index if not exists corridas_inicio on epay.corridas (inicio desc);
 
 -- ── Vistas ───────────────────────────────────────────────────────────────────
 
--- Semáforo actual con código interno y minutos en ese color.
+-- Semáforo actual con código interno, minutos en ese color, MAC del módulo y minutos sin reportar.
+-- (Columnas nuevas siempre al final: CREATE OR REPLACE VIEW no permite reordenar.)
 create or replace view epay.v_estatus as
 select m.cuenta, m.maquina_id, m.codigo_interno, m.nombre, m.ubikode, m.uid, m.es_k,
        e.color, e.desde as en_este_color_desde,
        round(extract(epoch from now() - e.desde) / 60)::int as minutos_en_este_color,
-       e.revisado
+       e.revisado,
+       m.modulo_mac, m.ultimo_acceso at time zone 'America/Caracas' as ultimo_acceso_caracas,
+       round(extract(epoch from now() - m.ultimo_acceso) / 60)::int as minutos_sin_reportar
 from epay.maquinas m
 left join epay.estatus_actual e using (cuenta, maquina_id)
 where m.vigente;
@@ -161,6 +168,15 @@ select cuenta, codigo_interno, count(*) as registros,
 from epay.maquinas
 where vigente and codigo_interno is not null
 group by cuenta, codigo_interno
+having count(*) > 1;
+
+-- Un mismo módulo físico (MAC) en dos registros vigentes: módulo movido o ficha duplicada.
+create or replace view epay.v_mac_repetidas as
+select cuenta, modulo_mac, count(*) as registros,
+       string_agg(coalesce(codigo_interno, '(sin código)') || ' · ' || maquina_id, ' | ' order by maquina_id) as maquinas
+from epay.maquinas
+where vigente and modulo_mac is not null and modulo_mac <> ''
+group by cuenta, modulo_mac
 having count(*) > 1;
 
 -- Con qué código interno se registraron las ventas de cada módulo: si cambia, el módulo se movió.

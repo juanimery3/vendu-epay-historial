@@ -31,6 +31,7 @@ Todo cambio queda en `epay.eventos`: **caida**, **recuperacion**, **cambio_modul
    | `DATABASE_URL` | la URI del paso 2 |
    | `EPAYUNO_USER` / `EPAYUNO_PASS` | usuario y clave del portal epay.uno de Epay.Uno |
    | `NEPTUNO_USER` / `NEPTUNO_PASS` | usuario y clave del portal epay.uno de Neptuno |
+   | `EPAYUNO_API_TOKEN` / `NEPTUNO_API_TOKEN` | (opcional) token de la API de epay.uno de cada cuenta: el semáforo pasa a leerse por API y guarda la MAC del módulo y el último acceso |
 
 4. **Crear las tablas**: pestaña *Actions* → **Instalar base** → *Run workflow*.
 5. **Cargar el pasado**: *Actions* → **Cargar histórico** → *Run workflow* con `desde` = `2026-07`
@@ -47,6 +48,7 @@ Supabase → *Table Editor* → esquema **epay**, o *SQL Editor* con estas vista
 | `epay.v_caidas` | caídas y recuperaciones, lo más reciente primero |
 | `epay.v_movimientos` | módulos o códigos internos cambiados, renombres, altas y bajas |
 | `epay.v_codigos_repetidos` | un mismo código interno en dos registros (módulo movido sin actualizar la ficha) |
+| `epay.v_mac_repetidas` | un mismo módulo físico (MAC) en dos registros (requiere token de API) |
 | `epay.v_codigo_en_ventas` | con qué código interno vendió cada módulo y entre qué fechas |
 | `epay.v_sin_ventas` | horas desde la última venta (verde pero sin vender = revisar) |
 | `epay.v_ventas_dia` | ventas por día (hora de Caracas) y máquina |

@@ -4,7 +4,8 @@
 //   node src/index.js ventas                        ventas del mes y pagos de ayer y hoy (cada hora)
 //   node src/index.js fichas                        descripciones y productos (cada 6 h)
 //   node src/index.js historico AAAA-MM [AAAA-MM]   carga inicial desde un mes
-// Credenciales por variables de entorno: DATABASE_URL, EPAYUNO_USER/PASS, NEPTUNO_USER/PASS.
+// Credenciales por variables de entorno: DATABASE_URL, EPAYUNO_USER/PASS, NEPTUNO_USER/PASS y,
+// opcionales, EPAYUNO_API_TOKEN / NEPTUNO_API_TOKEN (estatus por API con MAC del módulo).
 
 import { readFile } from "node:fs/promises";
 import { conectar } from "./db.js";
@@ -14,9 +15,10 @@ import { tareaFichas } from "./tareas/fichas.js";
 import { tareaHistorico } from "./tareas/historico.js";
 import { tareaVentas } from "./tareas/ventas.js";
 
+// token = token de la API de epay.uno (endpoints globales, ej. e=estatus); opcional por cuenta.
 const CUENTAS = [
-  { cuenta: "epayuno", usuario: process.env.EPAYUNO_USER, clave: process.env.EPAYUNO_PASS },
-  { cuenta: "neptuno", usuario: process.env.NEPTUNO_USER, clave: process.env.NEPTUNO_PASS },
+  { cuenta: "epayuno", usuario: process.env.EPAYUNO_USER, clave: process.env.EPAYUNO_PASS, token: process.env.EPAYUNO_API_TOKEN },
+  { cuenta: "neptuno", usuario: process.env.NEPTUNO_USER, clave: process.env.NEPTUNO_PASS, token: process.env.NEPTUNO_API_TOKEN },
 ];
 
 const [tarea, ...args] = process.argv.slice(2);
