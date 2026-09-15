@@ -1,0 +1,22 @@
+{
+  "name": "vendu-epay-historial",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Historial propio de ventas, pagos, estatus y movimientos de máquinas de epay.uno (Epay.Uno y Neptuno) en Supabase",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "esquema": "node src/index.js esquema",
+    "estatus": "node src/index.js estatus",
+    "ventas": "node src/index.js ventas",
+    "fichas": "node src/index.js fichas"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8"
+  }
+}

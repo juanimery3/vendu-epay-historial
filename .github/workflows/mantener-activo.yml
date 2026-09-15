@@ -1,0 +1,24 @@
+# GitHub pausa los crons de repos públicos tras 60 días sin commits: este commit mensual lo evita.
+name: Mantener activos los crons
+
+on:
+  schedule:
+    - cron: "0 12 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  latido:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          date -u +%F > .ultima-actividad
+          git add .ultima-actividad
+          git commit -m "Mantener activos los crons"
+          git push

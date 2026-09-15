@@ -1,0 +1,22 @@
+name: Instalar base
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  esquema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --omit=dev
+      - run: node src/index.js esquema
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

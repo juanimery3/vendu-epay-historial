@@ -1,0 +1,32 @@
+name: Fichas y productos
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: epay-fichas
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  fichas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --omit=dev
+      - run: node src/index.js fichas
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EPAYUNO_USER: ${{ secrets.EPAYUNO_USER }}
+          EPAYUNO_PASS: ${{ secrets.EPAYUNO_PASS }}
+          NEPTUNO_USER: ${{ secrets.NEPTUNO_USER }}
+          NEPTUNO_PASS: ${{ secrets.NEPTUNO_PASS }}
