@@ -65,23 +65,25 @@ Supabase → *Table Editor* → esquema **epay**, o *SQL Editor* con estas vista
 | `epay.v_inventario` | existencias por canal con estado ok / bajo / vacío / negativo |
 | `epay.v_cierres_dia` | por día de Caracas: máquinas que cerraron lote y total de cierres |
 | `epay.v_sin_cierre` | máquinas vigentes y activas sin cierre ayer, con sus pagos PDV de ayer y su último cierre |
-| `epay.v_liquidaciones_ubii` | por lote Ubii: fecha de liquidación de débito/Master y de Visa, máquinas y cierres |
+| `epay.v_liquidaciones_ubii` | por lote Ubii: acreditación de débito otros bancos, débito UBII APP y VISA, máquinas y cierres |
 | `epay.v_gift_cards` | gift cards con la máquina donde se usaron, en hora de Caracas |
 | `epay.v_saldos_clientes` | cambios de saldo de los clientes entre fotos diarias |
 | `epay.v_sincronizacion` | última corrida de cada tarea (si algo se detuvo) |
 
 Tablas: `maquinas`, `estatus_actual`, `eventos`, `ventas`, `pagos`, `pagos_externos`, `productos`, `canales`,
-`cierres`, `gift_cards`, `clientes`, `clientes_saldos`, `medios_pago` (catálogo) y `corridas`.
+`cierres`, `gift_cards`, `clientes`, `clientes_saldos`, `medios_pago` (catálogo), `feriados_bancarios` y `corridas`.
 
 **Medios de pago** (`epay.medios_pago`, catálogo oficial confirmado por epay el 16-09-2026): 1 TC / TD, 2 PDV,
 3 Pago Móvil, 4 Yappy, 5 ePay QR, 6 Yappy QR, 7 Débito Inmediato, 8 BioPago BDV, 9 Nequi, 10 BreB,
 11 Gift Card, 12 Commodo.
 
-**Regla Ubii** en `epay.cierres` (dada por Juan; días calendario, feriados no considerados, por confirmar):
-Ubii corta sus lotes a las 19:00 de Caracas. Un cierre antes de las 19:00 del día D va al lote de D
-(`lote_ubii`); a las 19:00 o después, al lote de D+1. Débito y Master se liquidan al día siguiente del lote
-(`liquidacion_debito`); Visa, el día hábil siguiente a esa fecha, saltando solo sábado y domingo
-(`liquidacion_visa`).
+**Regla Ubii** en `epay.cierres` y `epay.v_liquidaciones_ubii`: Ubii corta sus lotes a las 19:00 de Caracas.
+Un cierre antes de las 19:00 del día D va al lote de D (`lote_ubii`); a las 19:00 o después, al lote de D+1.
+Los datos del 14/08 al 10/09/2026 muestran que Mercantil acredita el débito de otros bancos y VISA exactos el
+**día hábil siguiente** a la fecha del lote (`debito_otros_bancos`, `visa`: lun–jue y dom +1, vie +3, sáb +2),
+y la wallet UBII APP del aeropuerto el **día calendario siguiente** a las 04:30, también en fines de semana
+(`debito_ubii_app`). Día hábil = lunes a viernes que no esté en `epay.feriados_bancarios` (tabla que se llena a
+mano; función `epay.siguiente_dia_habil(fecha)`).
 
 **Datos personales**: `clientes` y `gift_cards` guardan nombres, correos, teléfonos y códigos. Solo van a la
 base; los registros de Actions muestran únicamente conteos.

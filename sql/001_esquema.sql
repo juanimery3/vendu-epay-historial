@@ -170,12 +170,12 @@ create table if not exists epay.canales (
 create index if not exists canales_maquina on epay.canales (cuenta, maquina_id);
 
 -- Cierres de lote del PDV desde la API e=cierres (con token). Equivale a reporte23.php "Cierres PDV".
--- Regla Ubii (dada por Juan; días calendario, feriados no considerados, POR CONFIRMAR):
+-- Regla Ubii (decidida por Juan con datos medidos del 14/08 al 10/09/2026):
 --   * Ubii corta sus lotes a las 19:00 de Caracas: un cierre antes de las 19:00 del día local D entra en el
---     lote de D; a las 19:00 o después, en el lote de D+1 (lote_ubii).
---   * Débito y Master se liquidan el día calendario siguiente al lote (liquidacion_debito).
---   * Visa se liquida el día hábil siguiente a liquidacion_debito, saltando solo sábado y domingo
---     (liquidacion_visa).
+--     lote de D; a las 19:00 o después, en el lote de D+1 (lote_ubii, columna generada).
+--   * Las fechas de acreditación dependen de los feriados, así que se calculan en epay.v_liquidaciones_ubii:
+--     débito de otros bancos y VISA llegan a Mercantil el día hábil siguiente al lote; la wallet UBII APP
+--     (aeropuerto, 04:30) el día calendario siguiente, también en fines de semana.
 create table if not exists epay.cierres (
   cuenta         text    not null,
   cierre_id      bigint  not null,                       -- rowid de la API, único por cierre
@@ -185,17 +185,32 @@ create table if not exists epay.cierres (
   fecha          timestamptz not null,                   -- la API la da en UTC
   dia_local      date generated always as ((fecha at time zone 'America/Caracas')::date) stored,
   lote_ubii      date generated always as (((fecha at time zone 'America/Caracas') + interval '5 hours')::date) stored,
-  liquidacion_debito date generated always as ((((fecha at time zone 'America/Caracas') + interval '5 hours')::date + 1)) stored,
-  liquidacion_visa   date generated always as (
-    (((fecha at time zone 'America/Caracas') + interval '5 hours')::date + 1) + case extract(isodow from (((fecha at time zone 'America/Caracas') + interval '5 hours')::date + 1)) when 5 then 3 when 6 then 2 else 1 end
-  ) stored,
-  creado         timestamptz not null default now(),
+  creado        timestamptz not null default now(),
   actualizado    timestamptz not null default now(),
   primary key (cuenta, cierre_id)
 );
 create index if not exists cierres_dia on epay.cierres (cuenta, dia_local, maquina_id);
-create index if not exists cierres_liquidacion on epay.cierres (cuenta, liquidacion_debito);
 create index if not exists cierres_maquina_fecha on epay.cierres (cuenta, maquina_id, fecha desc);
+-- Regla anterior (liquidación en columnas generadas sin feriados): se retira. La vista depende de esas columnas.
+drop view if exists epay.v_liquidaciones_ubii;
+alter table epay.cierres drop column if exists liquidacion_debito;
+alter table epay.cierres drop column if exists liquidacion_visa;
+create index if not exists cierres_lote on epay.cierres (cuenta, lote_ubii);
+
+-- Feriados bancarios de Venezuela (los carga Juan). Día hábil = lunes a viernes que no esté aquí.
+create table if not exists epay.feriados_bancarios (
+  fecha  date primary key,
+  nombre text
+);
+
+-- Primer día hábil posterior a d (lun–jue y dom → +1, vie → +3, sáb → +2, saltando feriados).
+create or replace function epay.siguiente_dia_habil(d date) returns date
+language sql stable as $$
+  select min(x::date)
+  from generate_series((d + 1)::timestamp, (d + 60)::timestamp, interval '1 day') x
+  where extract(isodow from x) < 6
+    and not exists (select 1 from epay.feriados_bancarios f where f.fecha = x::date)
+$$;
 
 -- Gift cards desde la API e=gifts (con token). Fechas asumidas en UTC (POR CONFIRMAR).
 -- usado null = no se ha usado (la API manda "0000-00-00 00:00:00" y maquina null).
@@ -406,12 +421,18 @@ where m.vigente and coalesce(m.activo_epay, true)
                   where c.cuenta = m.cuenta and c.maquina_id = m.maquina_id and c.dia_local = ayer.dia)
 order by pagos_pdv_ayer desc, m.cuenta, m.codigo_interno;
 
--- Cuándo liquida Ubii cada lote (regla de las 19:00; débito/Master y Visa, ver epay.cierres).
+-- Cuándo se acredita cada lote Ubii (regla de las 19:00, ver epay.cierres; feriados en epay.feriados_bancarios).
 create or replace view epay.v_liquidaciones_ubii as
-select cuenta, lote_ubii, liquidacion_debito, liquidacion_visa,
-       count(distinct maquina_id) as maquinas, count(*) as cierres
-from epay.cierres
-group by cuenta, lote_ubii, liquidacion_debito, liquidacion_visa
+select cuenta, lote_ubii,
+       epay.siguiente_dia_habil(lote_ubii) as debito_otros_bancos,  -- crédito en Mercantil
+       lote_ubii + 1 as debito_ubii_app,                            -- wallet del aeropuerto, 04:30, todos los días
+       epay.siguiente_dia_habil(lote_ubii) as visa,
+       maquinas, cierres
+from (
+  select cuenta, lote_ubii, count(distinct maquina_id) as maquinas, count(*) as cierres
+  from epay.cierres
+  group by cuenta, lote_ubii
+) l
 order by cuenta, lote_ubii desc;
 
 -- Movimientos de saldo de clientes entre fotos diarias (primera foto y días en que cambió).
