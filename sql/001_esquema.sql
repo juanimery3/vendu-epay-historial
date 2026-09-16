@@ -115,8 +115,20 @@ create table if not exists epay.productos (
   primary key (cuenta, producto_id)
 );
 
+-- Catálogo oficial de medios de pago de epay.uno (confirmado por epay el 16-09-2026).
+-- Mantener igual a MEDIOS en src/tareas/ventas.js.
+create table if not exists epay.medios_pago (
+  codigo text primary key,                               -- medio_codigo de la API e=pago
+  nombre text not null
+);
+insert into epay.medios_pago (codigo, nombre) values
+  ('1', 'TC / TD'), ('2', 'PDV'), ('3', 'Pago Móvil'), ('4', 'Yappy'), ('5', 'ePay QR'), ('6', 'Yappy QR'),
+  ('7', 'Débito Inmediato'), ('8', 'BioPago BDV'), ('9', 'Nequi'), ('10', 'BreB'), ('11', 'Gift Card'),
+  ('12', 'Commodo')
+on conflict (codigo) do update set nombre = excluded.nombre;
+
 -- Pagos por módulo desde la API e=pago (sin login). Coinciden con el reporte de pagos externos.
--- medio_codigo: 2 = PDV, 7 = Débito Inmediato, 11 = Gift Card.
+-- medio_codigo: ver epay.medios_pago.
 create table if not exists epay.pagos (
   cuenta       text    not null,
   pago_id      bigint  not null,                         -- rowid de la API
@@ -134,13 +146,11 @@ create table if not exists epay.pagos (
 );
 create index if not exists pagos_api_maquina_fecha on epay.pagos (cuenta, maquina_id, fecha);
 create index if not exists pagos_api_fecha on epay.pagos (fecha);
--- Nombre del medio para los códigos que se descubrieron después de la primera carga (idempotente).
--- Mantener igual a MEDIOS en src/tareas/ventas.js.
-update epay.pagos
-set medio = case medio_codigo
-              when '1' then 'TC / TD' when '2' then 'PDV' when '3' then 'Pago Móvil' when '5' then 'ePay QR'
-              when '6' then 'Yappy QR' when '7' then 'Débito Inmediato' when '11' then 'Gift Card' end
-where medio like 'código %' and medio_codigo in ('1', '2', '3', '5', '6', '7', '11');
+-- Nombre del medio según el catálogo oficial, también para los pagos guardados como "código N" (idempotente).
+update epay.pagos p
+set medio = m.nombre
+from epay.medios_pago m
+where m.codigo = p.medio_codigo and p.medio is distinct from m.nombre;
 
 -- Existencias por canal (slot) de cada máquina desde la API e=canal (sin login). Foto de la última lectura.
 create table if not exists epay.canales (
@@ -158,6 +168,81 @@ create table if not exists epay.canales (
   primary key (cuenta, canal_id)
 );
 create index if not exists canales_maquina on epay.canales (cuenta, maquina_id);
+
+-- Cierres de lote del PDV desde la API e=cierres (con token). Equivale a reporte23.php "Cierres PDV".
+-- Regla Ubii (dada por Juan; días calendario, feriados no considerados, POR CONFIRMAR):
+--   * Ubii corta sus lotes a las 19:00 de Caracas: un cierre antes de las 19:00 del día local D entra en el
+--     lote de D; a las 19:00 o después, en el lote de D+1 (lote_ubii).
+--   * Débito y Master se liquidan el día calendario siguiente al lote (liquidacion_debito).
+--   * Visa se liquida el día hábil siguiente a liquidacion_debito, saltando solo sábado y domingo
+--     (liquidacion_visa).
+create table if not exists epay.cierres (
+  cuenta         text    not null,
+  cierre_id      bigint  not null,                       -- rowid de la API, único por cierre
+  maquina_id     integer not null,
+  codigo_interno text,                                   -- el que tenía la máquina al cerrar
+  uid            text,                                   -- serial del módulo
+  fecha          timestamptz not null,                   -- la API la da en UTC
+  dia_local      date generated always as ((fecha at time zone 'America/Caracas')::date) stored,
+  lote_ubii      date generated always as (((fecha at time zone 'America/Caracas') + interval '5 hours')::date) stored,
+  liquidacion_debito date generated always as ((((fecha at time zone 'America/Caracas') + interval '5 hours')::date + 1)) stored,
+  liquidacion_visa   date generated always as (
+    (((fecha at time zone 'America/Caracas') + interval '5 hours')::date + 1) + case extract(isodow from (((fecha at time zone 'America/Caracas') + interval '5 hours')::date + 1)) when 5 then 3 when 6 then 2 else 1 end
+  ) stored,
+  creado         timestamptz not null default now(),
+  actualizado    timestamptz not null default now(),
+  primary key (cuenta, cierre_id)
+);
+create index if not exists cierres_dia on epay.cierres (cuenta, dia_local, maquina_id);
+create index if not exists cierres_liquidacion on epay.cierres (cuenta, liquidacion_debito);
+create index if not exists cierres_maquina_fecha on epay.cierres (cuenta, maquina_id, fecha desc);
+
+-- Gift cards desde la API e=gifts (con token). Fechas asumidas en UTC (POR CONFIRMAR).
+-- usado null = no se ha usado (la API manda "0000-00-00 00:00:00" y maquina null).
+create table if not exists epay.gift_cards (
+  cuenta        text not null,
+  codigo        text not null,
+  fecha         timestamptz,
+  vence         timestamptz,
+  monto         numeric,                                 -- hay montos de ~10^8: sin precisión fija
+  unico         boolean,
+  usuario       text,
+  usado         timestamptz,
+  maquina_id    integer,                                 -- dónde se usó
+  grupo         text,
+  producto      text,
+  nota          text,
+  visto_primero timestamptz not null default now(),
+  visto_ultimo  timestamptz not null default now(),
+  primary key (cuenta, codigo)
+);
+create index if not exists gift_cards_usado on epay.gift_cards (cuenta, usado);
+
+-- Clientes con saldo desde la API e=clientes (con token). DATOS PERSONALES: nunca a los logs.
+create table if not exists epay.clientes (
+  cuenta      text    not null,
+  cliente_id  integer not null,                          -- rowid de la API (= cliente_id de ventas y pagos)
+  codigo      text,
+  nombre      text,
+  apellido    text,
+  email       text,
+  telhome     text,
+  telmobil    text,
+  saldo       numeric,
+  creado      timestamptz not null default now(),
+  actualizado timestamptz not null default now(),
+  primary key (cuenta, cliente_id)
+);
+
+-- Foto diaria del saldo de cada cliente (día de Caracas; la última lectura del día manda).
+create table if not exists epay.clientes_saldos (
+  cuenta     text    not null,
+  cliente_id integer not null,
+  fecha      date    not null,
+  saldo      numeric not null,
+  leido      timestamptz not null default now(),
+  primary key (cuenta, cliente_id, fecha)
+);
 
 -- Bitácora de cada ejecución: permite ver si la sincronización se detuvo (huecos).
 create table if not exists epay.corridas (
@@ -294,6 +379,62 @@ from epay.v_estatus s
 left join (select cuenta, maquina_id, max(fecha) as ultima_venta from epay.ventas group by 1, 2) u
   using (cuenta, maquina_id)
 order by horas_sin_vender desc nulls first;
+
+-- Cierres por día local (Caracas): máquinas que cerraron y total de cierres.
+create or replace view epay.v_cierres_dia as
+select cuenta, dia_local, count(distinct maquina_id) as maquinas_con_cierre, count(*) as cierres
+from epay.cierres
+group by cuenta, dia_local;
+
+-- Máquinas vigentes y activas sin cierre de lote ayer (día de Caracas). Con pagos PDV ayer y sin cierre = revisar.
+create or replace view epay.v_sin_cierre as
+with ayer as (select ((now() at time zone 'America/Caracas')::date - 1) as dia)
+select m.cuenta, m.maquina_id, m.codigo_interno, m.nombre, e.color, ayer.dia as dia_sin_cierre,
+       (select count(*) from epay.pagos p
+        where p.cuenta = m.cuenta and p.maquina_id = m.maquina_id and p.medio_codigo = '2'
+          and p.fecha >= (ayer.dia::timestamp at time zone 'America/Caracas')
+          and p.fecha < ((ayer.dia + 1)::timestamp at time zone 'America/Caracas')) as pagos_pdv_ayer,
+       u.ultimo_cierre at time zone 'America/Caracas' as ultimo_cierre_caracas,
+       ayer.dia - (u.ultimo_cierre at time zone 'America/Caracas')::date as dias_desde_ultimo_cierre
+from epay.maquinas m
+cross join ayer
+left join epay.estatus_actual e using (cuenta, maquina_id)
+left join (select cuenta, maquina_id, max(fecha) as ultimo_cierre from epay.cierres group by 1, 2) u
+  using (cuenta, maquina_id)
+where m.vigente and coalesce(m.activo_epay, true)
+  and not exists (select 1 from epay.cierres c
+                  where c.cuenta = m.cuenta and c.maquina_id = m.maquina_id and c.dia_local = ayer.dia)
+order by pagos_pdv_ayer desc, m.cuenta, m.codigo_interno;
+
+-- Cuándo liquida Ubii cada lote (regla de las 19:00; débito/Master y Visa, ver epay.cierres).
+create or replace view epay.v_liquidaciones_ubii as
+select cuenta, lote_ubii, liquidacion_debito, liquidacion_visa,
+       count(distinct maquina_id) as maquinas, count(*) as cierres
+from epay.cierres
+group by cuenta, lote_ubii, liquidacion_debito, liquidacion_visa
+order by cuenta, lote_ubii desc;
+
+-- Movimientos de saldo de clientes entre fotos diarias (primera foto y días en que cambió).
+create or replace view epay.v_saldos_clientes as
+select * from (
+  select s.cuenta, s.cliente_id, c.codigo, c.nombre, c.apellido, s.fecha, s.saldo,
+         lag(s.saldo) over w as saldo_anterior,
+         s.saldo - lag(s.saldo) over w as diferencia
+  from epay.clientes_saldos s
+  left join epay.clientes c using (cuenta, cliente_id)
+  window w as (partition by s.cuenta, s.cliente_id order by s.fecha)
+) x
+where saldo_anterior is null or diferencia <> 0
+order by fecha desc, cuenta, cliente_id;
+
+-- Gift cards con la máquina donde se usaron, fechas en hora de Caracas.
+create or replace view epay.v_gift_cards as
+select g.cuenta, g.codigo, g.fecha at time zone 'America/Caracas' as creada_caracas,
+       g.vence at time zone 'America/Caracas' as vence_caracas, g.monto, g.unico, g.usuario,
+       g.usado at time zone 'America/Caracas' as usada_caracas, g.usado is not null as usada,
+       g.maquina_id, m.codigo_interno, g.grupo, g.producto, g.nota
+from epay.gift_cards g
+left join epay.maquinas m using (cuenta, maquina_id);
 
 -- Última ejecución de cada tarea por cuenta.
 create or replace view epay.v_sincronizacion as

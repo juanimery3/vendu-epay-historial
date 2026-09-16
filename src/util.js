@@ -90,3 +90,22 @@ export async function enParalelo(items, limite, fn) {
   await Promise.all(trabajadores);
   return resultados;
 }
+
+/** Fecha YYYY-MM-DD en UTC, desplazada en días. */
+export function diaUtc(desplazamientoDias = 0) {
+  return new Date(Date.now() + desplazamientoDias * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Días YYYY-MM-DD de desde a hasta, ambos incluidos. */
+export function rangoDias(desde, hasta) {
+  const dias = [];
+  for (let t = Date.parse(desde + "T00:00:00Z"); t <= Date.parse(hasta + "T00:00:00Z"); t += 86_400_000) {
+    dias.push(new Date(t).toISOString().slice(0, 10));
+  }
+  return dias;
+}
+
+/** "2026-09-15 11:35:31" de la API (UTC) a ISO; relleno "0000-00-00 00:00:00" o texto inválido: null. */
+export function fechaApiUtc(s) {
+  return /^20\d{2}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(s ?? "")) ? s.replace(" ", "T") + "Z" : null;
+}

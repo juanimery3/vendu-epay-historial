@@ -4,12 +4,19 @@
 //   node src/index.js ventas                        ventas y pagos del mes + existencias por canal (cada hora; API)
 //   node src/index.js fichas                        descripciones, pago hasta/ruta (portal, único login) y productos (cada 6 h)
 //   node src/index.js historico AAAA-MM [AAAA-MM]   carga inicial de ventas y pagos desde un mes (API)
+//   node src/index.js cierres [AAAA-MM-DD [AAAA-MM-DD]]
+//                                                   cierres de lote del PDV: sin fechas, anteayer a hoy UTC (cada hora);
+//                                                   con fechas, carga histórica día por día (API con token)
+//   node src/index.js clientes                      gift cards, clientes y foto diaria de saldos (cada 6 h; API con token)
 // Credenciales por variables de entorno: DATABASE_URL, EPAYUNO_USER/PASS, NEPTUNO_USER/PASS y,
-// opcionales, EPAYUNO_API_TOKEN / NEPTUNO_API_TOKEN (estatus por API con MAC del módulo).
+// opcionales, EPAYUNO_API_TOKEN / NEPTUNO_API_TOKEN (estatus por API con MAC del módulo; cierres y clientes
+// solo corren en las cuentas que tienen token).
 
 import { readFile } from "node:fs/promises";
 import { conectar } from "./db.js";
 import { Epay } from "./epay.js";
+import { tareaCierres } from "./tareas/cierres.js";
+import { tareaClientes } from "./tareas/clientes.js";
 import { tareaEstatus } from "./tareas/estatus.js";
 import { tareaFichas } from "./tareas/fichas.js";
 import { tareaHistorico } from "./tareas/historico.js";
@@ -31,15 +38,24 @@ const TAREAS = {
     await tareaEstatus(db, epay); // asegura la lista de máquinas antes de pedir sus ventas
     return tareaHistorico(db, epay, args[0], args[1] || undefined);
   },
+  cierres: (db, epay) => tareaCierres(db, epay, args[0], args[1]),
+  clientes: (db, epay) => tareaClientes(db, epay),
 };
+// Tareas que solo existen con el token de la API: la cuenta sin token se omite sin error.
+const SOLO_CON_TOKEN = new Set(["cierres", "clientes"]);
+const DIA = /^\d{4}-\d{2}-\d{2}$/;
 
 async function main() {
   if (tarea === "historico" && (!/^\d{4}-\d{2}$/.test(args[0] || "") || (args[1] && !/^\d{4}-\d{2}$/.test(args[1])))) {
     console.error("Uso: node src/index.js historico AAAA-MM [AAAA-MM]");
     return 2;
   }
+  if (tarea === "cierres" && ((args[0] && !DIA.test(args[0])) || (args[1] && !DIA.test(args[1])))) {
+    console.error("Uso: node src/index.js cierres [AAAA-MM-DD [AAAA-MM-DD]]");
+    return 2;
+  }
   if (tarea !== "esquema" && !TAREAS[tarea]) {
-    console.error("Uso: node src/index.js esquema | estatus | ventas | fichas | historico AAAA-MM [AAAA-MM]");
+    console.error("Uso: node src/index.js esquema | estatus | ventas | fichas | historico AAAA-MM [AAAA-MM] | cierres [AAAA-MM-DD [AAAA-MM-DD]] | clientes");
     return 2;
   }
 
@@ -62,6 +78,10 @@ async function main() {
     for (const c of CUENTAS) {
       if (!(c.usuario && c.clave) && !c.token) {
         console.log(`::warning::${c.cuenta}: faltan los secretos de epay.uno (usuario y clave o token), se omite`);
+        continue;
+      }
+      if (SOLO_CON_TOKEN.has(tarea) && !c.token) {
+        console.log(`${c.cuenta} · ${tarea} · sin token de API, se omite`);
         continue;
       }
       configuradas++;

@@ -112,6 +112,36 @@ export class Epay {
       .filter((m) => m.maquina_id > 0);
   }
 
+  /** Endpoint con token: sin token no se llama (epay respondería 403). */
+  #apiToken(parametros) {
+    if (!this.token) throw new Error(`e=${parametros.e} requiere token de API`);
+    return this.#api({ ...parametros, token: this.token });
+  }
+
+  /**
+   * Cierres de lote del PDV de un día (e=cierres, equivale a reporte23.php "Cierres PDV").
+   * `fecha` (AAAA-MM-DD) filtra por día UTC y las fechas del resultado vienen en UTC.
+   */
+  async cierresDia(fecha) {
+    const lista = await this.#apiToken({ e: "cierres", fecha });
+    if (!Array.isArray(lista)) throw new Error("e=cierres no devolvió una lista");
+    return lista;
+  }
+
+  /** Todas las gift cards de la cuenta (e=gifts; ignora filtros). */
+  async giftCards() {
+    const lista = await this.#apiToken({ e: "gifts" });
+    if (!Array.isArray(lista)) throw new Error("e=gifts no devolvió una lista");
+    return lista;
+  }
+
+  /** Clientes con saldo (e=clientes; ignora filtros). DATOS PERSONALES: solo a la base, nunca a los logs. */
+  async clientes() {
+    const lista = await this.#apiToken({ e: "clientes" });
+    if (!Array.isArray(lista)) throw new Error("e=clientes no devolvió una lista");
+    return lista;
+  }
+
   /** Semáforo "Estatus equipos" de reportes.php: verde = reportó hace menos de 1 h. */
   async estatus() {
     const html = await this.pagina("/reportes.php");

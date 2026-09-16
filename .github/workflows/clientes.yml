@@ -1,0 +1,35 @@
+name: Gift cards y clientes
+
+on:
+  schedule:
+    - cron: "41 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: epay-clientes
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  clientes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --omit=dev
+      # Datos personales: el log solo muestra conteos.
+      - run: node src/index.js clientes
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EPAYUNO_USER: ${{ secrets.EPAYUNO_USER }}
+          EPAYUNO_PASS: ${{ secrets.EPAYUNO_PASS }}
+          NEPTUNO_USER: ${{ secrets.NEPTUNO_USER }}
+          NEPTUNO_PASS: ${{ secrets.NEPTUNO_PASS }}
+          EPAYUNO_API_TOKEN: ${{ secrets.EPAYUNO_API_TOKEN }}
+          NEPTUNO_API_TOKEN: ${{ secrets.NEPTUNO_API_TOKEN }}
